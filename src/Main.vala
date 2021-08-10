@@ -1,7 +1,7 @@
 using Gtk;
 
 class WebsocketConnection {
-    private static Soup.WebsocketConnection websocket_connection;
+    private Soup.WebsocketConnection websocket_connection;
     public signal void ws_message(int type, string message);
     public signal void connection_succeeded();
     public signal void connection_established();
@@ -19,10 +19,9 @@ class WebsocketConnection {
     }
 
     public async void init_connection_for(string host) {
-        MainLoop loop = new MainLoop();
         var socket_client = new Soup.Session();
 
-        string url = "ws://%s:8080/".printf(host);
+        string url = "wss://%s/".printf(host);
         message(@"connect to $url");
         var websocket_message = new Soup.Message("GET", url);
         websocket_connection = yield socket_client.websocket_connect_async(websocket_message, null, null, null);
@@ -42,10 +41,12 @@ class WebsocketConnection {
         } catch (Error e) {
             message("Remote error: " + e.message + " " + e.code.to_string());
             connection_failed();
-            loop.quit();
         }
 
-        loop.run();
+    }
+
+    public void send(string string) {
+        websocket_connection.send_text(string);
     }
 }
 
@@ -68,22 +69,29 @@ class Main : Gtk.Application {
         window.border_width = 10;
         window.window_position = WindowPosition.CENTER;
         window.set_default_size(350, 70);
-        window.destroy.connect(Gtk.main_quit);
 
         var grid  = new Grid();
+        grid.halign = Gtk.Align.CENTER;
+        grid.valign = Gtk.Align.CENTER;
         grid.orientation = Orientation.VERTICAL;
         grid.column_spacing = 5;
         grid.row_spacing = 5;
         var main_label = new Label("...");
         var websocket_host_input = new Entry();
-        var send_message_btn = new Button.with_label("Connect");
+        var send_message_btn = new Button.with_label("Send message");
+        send_message_btn.clicked.connect(() => {
+            string text =  websocket_host_input.get_text();
+            message("sending " + text + " to echo server using websockets");
+            connection.send(text);
+        });
 
-        var websocket_host = "192.168.1.252";
+        var websocket_host = "echo.websocket.org";
         connection = new WebsocketConnection(websocket_host);
 
         connection.connection_succeeded.connect(() => {
             message("Connection succeeded");
             main_label.set_text("Connection succeeded");
+            connection.send("hello");
         });
         connection.connection_failed.connect(() => {
             message("Connection failed");
@@ -91,10 +99,16 @@ class Main : Gtk.Application {
 
         connection.ws_message.connect((type, msg) => {
             message("message received " + msg);
+            main_label.set_text("Got from echo server " + msg);
         });
 
         connection.init_connection_for.begin(websocket_host);
+
+
         grid.add(main_label);
+        grid.add(websocket_host_input);
+        grid.add(send_message_btn);
+
         window.add(grid);
         window.show_all();
     }
